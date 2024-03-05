@@ -54,3 +54,7 @@ vcpkg/
 
 # Ignore local cache used by e.g. clangd
 .cache/
+
+tmp.md
+
+bbr-results

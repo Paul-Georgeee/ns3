@@ -177,11 +177,17 @@ class TcpRateOps : public Object
         int32_t m_rateDelivered{0};       //!< The amount of data delivered considered to calculate delivery rate.
         Time m_rateInterval{Seconds(0)};  //!< The value of interval considered to calculate delivery rate.
         bool m_rateAppLimited{false};     //!< Was sample was taken when data is app limited?
+
+        uint64_t m_send{0};               //!< The total amount of data in bytes sent so far. Used for oBBR
+        
     };
+
 
     // Rate sample related variables
     TcpRateConnection m_rate;   //!< Rate information
     TcpRateSample m_rateSample; //!< Rate sample (continuosly updated)
+
+  
 };
 
 /**

@@ -110,7 +110,28 @@ TcpBbr::GetTypeId()
                           BooleanValue(false),
                           MakeBooleanAccessor(&TcpBbr::m_enableLongTermBwMeasure),
                           MakeBooleanChecker())
-    ;
+            .AddAttribute("EnableOBBR",
+                            "Use oBBR or not",
+                            BooleanValue(false),
+                            MakeBooleanAccessor(&TcpBbr::m_oBBR),
+                            MakeBooleanChecker())
+            .AddTraceSource("BbrState",
+                            "The current BBR state",
+                            MakeTraceSourceAccessor(&TcpBbr::m_mode),
+                            "ns3::TracedValueCallback::BbrMode")
+            .AddTraceSource("PacingGain",
+                            "The current pacing gain",
+                            MakeTraceSourceAccessor(&TcpBbr::m_pacingGain),
+                            "ns3::TracedValueCallback::PacingGain")
+            .AddTraceSource("CycleIdx",
+                            "The current cycle index in PROBE_BW",
+                            MakeTraceSourceAccessor(&TcpBbr::m_cycleIdx),
+                            "ns3::TracedValueCallback::CycleIdx")
+            .AddTraceSource("MinRtt",
+                            "The current minimum RTT",
+                            MakeTraceSourceAccessor(&TcpBbr::m_minRtt),
+                            "ns3::TracedValueCallback::MinRtt");
+
     return tid;
 }
 
@@ -145,7 +166,7 @@ uint32_t TcpBbr::Bdp(Ptr<TcpSocketState> tcb, DataRate bw, double gain) const {
     if (m_minRtt == Time::Max()) {
         return tcb->m_initialCWnd * tcb->m_segmentSize;
     }
-    auto bdp = static_cast<uint32_t>(bw.GetBitRate()/8.0 * m_minRtt.GetSeconds() * gain);
+    auto bdp = static_cast<uint32_t>(bw.GetBitRate()/8.0 * m_minRtt.Get().GetSeconds() * gain);
     uint32_t tmp = bdp + tcb->m_segmentSize - 1;
     return tmp - (tmp % tcb->m_segmentSize);
 }
@@ -166,7 +187,7 @@ uint32_t TcpBbr::GetQuantizationBudget(Ptr<TcpSocketState> tcb, uint32_t cwnd) c
     cwnd += 2 * tcb->m_segmentSize; // 3
     // uint32_t segs = cwnd / tcb->m_segmentSize;
     // cwnd = ((segs + 1) & (~1U)) * tcb->m_segmentSize;
-    if (m_mode == BBR_PROBE_BW && m_cycleIdx == 0) {
+    if (m_mode == BBR_PROBE_BW && m_cycleIdx == 0U) {
         cwnd += 2 * tcb->m_segmentSize;
     }
     return cwnd;
@@ -195,6 +216,18 @@ void TcpBbr::UpdateBw(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
         m_isRoundStart = true;
         m_packetConservation = false;
     }
+
+    if(!rs.m_isAppLimited && m_mode == BBR_PROBE_BW) {
+        m_recentBw[m_recentBwIndex] = rs.m_deliveryRate;
+        m_recentBwIndex = (m_recentBwIndex + 1) % m_kSamples;
+
+        if(rs.m_deliveryRate < m_bwFilter.GetBest() * 0.75) {
+            m_downBwCnt++;
+        } else{
+            m_downBwCnt = 0;
+        }
+    }
+
 
     LtBwSampling(tcb, rs);
 
@@ -248,6 +281,7 @@ void TcpBbr::UpdateAckAggregation(Ptr<TcpSocketState> tcb, const TcpRateSample& 
 
 void TcpBbr::UpdateCyclePhase(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
     if (m_mode == BBR_PROBE_BW && IsNextCyclePhase(tcb, rs)) {
+        // std::cout << "advance cycle phase\n" << std::endl;
         AdvanceCyclePhase();
     }
 }
@@ -303,7 +337,7 @@ uint32_t TcpBbr::Inflight(Ptr<TcpSocketState> tcb, DataRate bw, double gain) {
 }
 
 void TcpBbr::AdvanceCyclePhase() {
-    m_cycleIdx = (m_cycleIdx + 1) % GAIN_CYCLE_LENGTH;
+    m_cycleIdx = (m_cycleIdx.Get() + 1) % GAIN_CYCLE_LENGTH;
     m_cycleTimestamp = Simulator::Now(); // rc.m_deliveredTime
 }
 
@@ -312,6 +346,8 @@ void TcpBbr::CheckFullBwReached(Ptr<TcpSocketState> tcb, const TcpRateSample& rs
         return;
     }
 
+    // If current best bandwitdh bigger than 1.25 times of previous best bandwidth
+    // used for BBR_STARTUP
     if (m_bwFilter.GetBest().GetBitRate() >= m_fullBw.GetBitRate() * FULL_BW_THRESH) {
         m_fullBw = m_bwFilter.GetBest();
         m_fullBwCnt = 0;
@@ -361,6 +397,10 @@ void TcpBbr::UpdateMinRtt(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
     }
 
     if (m_mode == BBR_PROBE_RTT) {
+        
+        //modify for oBBR
+        m_changeSC = true;
+
         rc.m_appLimited = std::max<uint64_t>(rc.m_delivered + tcb->m_bytesInFlight.Get(), 1);
         uint32_t cwndMinTarget = tcb->m_segmentSize * CWND_MIN_TARGET_PKTS;
         if (m_probeRttDoneTimestamp.IsZero() && tcb->m_bytesInFlight <= cwndMinTarget) {
@@ -422,7 +462,7 @@ void TcpBbr::UpdateGains() {
         if (m_ltUseBw) {
             m_pacingGain = 1.0;
         } else {
-            m_pacingGain = PACING_GAIN[m_cycleIdx];
+            m_pacingGain = PACING_GAIN[m_cycleIdx.Get()];
         }
         m_cwndGain = CWND_GAIN;
         break;
@@ -433,9 +473,94 @@ void TcpBbr::UpdateGains() {
 }
 
 void TcpBbr::CongControl(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, const TcpRateSample& rs) {
+    if(m_oBBR)
+        oBBRUpdate(tcb, rc, rs);
     UpdateModel(tcb, rs);
     SetPacingRate(tcb, m_pacingGain);
     SetCwnd(tcb, rs);
+}
+
+void TcpBbr::oBBRUpdate(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, const TcpRateSample& rs)
+{
+    if(m_mode == BBR_STARTUP && tcb->m_totalLost * 100.0 / rc.m_delivered < 10.0)
+        return;
+
+    // packet loss happen and min rtt is valid
+    if(rs.m_bytesLoss && m_minRtt != Time::Max())
+    {   
+        double curRtt = rs.m_rtt.GetDouble(), minRtt = m_minRtt.Get().GetDouble();
+        this->m_cwndGain = std::min(1.0 + m_u * (curRtt - minRtt) / minRtt, m_maxCwndGain);
+    } 
+    // not in loss, recover the cwndgain
+    else if(tcb->m_congState.Get() < TcpSocketState::CA_RECOVERY)
+        this->m_cwndGain = std::min(this->m_cwndGain + (0.01 * rs.m_ackedSacked) / Inflight(tcb, m_bwFilter.GetBest(), 1.0), m_maxCwndGain);
+    
+
+    // Update the abnormal rtt sample cnt
+    if(rs.m_rtt > 2.5 * m_minRtt)
+        m_upRttCnt++;
+    else
+        m_upRttCnt = 0;
+    
+    // has enough abnormal rtt samples or bw samples?
+    if(rs.m_bytesLoss){
+        if((m_downBwCnt >= 30 || m_upRttCnt > 30) && m_cc == -1){
+            m_cc = 0;
+            m_changeSC = true;
+        }
+    }
+
+    // Start to compute the score before and after change the bw. 
+    // 照搬oBBR原有实现，原有实现代码有点难懂，后续有时间再重写一下
+    if(m_changeSC){
+        m_firstSent = rc.m_send;
+        m_firstDelivered = rc.m_delivered;
+        m_changeSC = false;
+        m_scoreTime = Simulator::Now();
+    }
+
+    if(!m_changeSC && Simulator::Now() - m_scoreTime > m_scoreInterval){
+        uint64_t _sent = rc.m_send - m_firstSent, _delivered = rc.m_delivered - m_firstDelivered;
+        uint64_t _unacked = _sent - _delivered;
+        uint64_t score = _delivered - 10 * _unacked;
+        if(m_cc != -1 && m_cc < 2){
+            m_score1 = m_score2;
+            m_score2 = score;
+            if(m_cc == 1){
+                DataRate bw_sum{0};
+                for(int i = 0; i < m_kSamples; i++)
+                    bw_sum += m_recentBw[i];
+                bw_sum = DataRate(bw_sum.GetBitRate() / m_kSamples);
+
+                m_backupBw = m_bwFilter.GetBest();
+                m_bwFilter.Reset(bw_sum, m_rttCnt);
+                m_upRttCnt = 0;
+                m_downBwCnt = 0;
+            }
+        } else if(m_cc >= 2) { 
+            m_score3 = m_score4;
+            m_score4 = score;
+            if(m_cc == 3){
+                if(m_score3 + m_score4 < m_score1 + m_score2 && Simulator::Now() - m_reTimer > 10 * m_minRtt){
+                    // recover the bw
+                    m_bwFilter.Update(m_backupBw, m_rttCnt);
+                    m_reTimer = Simulator::Now();
+                }
+                m_cc = -1;
+            }
+
+        }
+
+        if(m_cc != -1){
+            m_cc++;
+        }
+
+        m_firstSent = rc.m_send;
+        m_firstDelivered = rc.m_delivered;
+        m_scoreTime = Simulator::Now();
+    }
+
+
 }
 
 void TcpBbr::SetPacingRate(Ptr<TcpSocketState> tcb, double gain) {
@@ -476,7 +601,15 @@ void TcpBbr::SetCwnd(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
             return;
         }
 
-        uint32_t targetCwnd = Bdp(tcb, Bw(), m_cwndGain);
+        //oBBR: ensure enough cwnd when probe bw. Not mentioned in paper but implemented in its eval
+        double gain = this->m_cwndGain;
+        // if(this->m_oBBR && this->m_pacingGain > 1.0){
+        //     gain = std::max(gain, 1.25);
+        //     if(Simulator::Now() - m_lastLossTime > m_lossTimeWinSize)
+        //         gain = std::max(gain, m_maxCwndGain);
+        // }
+
+        uint32_t targetCwnd = Bdp(tcb, Bw(), gain);
         targetCwnd += AckAggregationCwnd(tcb);
         targetCwnd = GetQuantizationBudget(tcb, targetCwnd);
 
@@ -485,6 +618,11 @@ void TcpBbr::SetCwnd(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
         } else if (cwnd < targetCwnd || rc.m_delivered < tcb->m_initialCWnd * tcb->m_segmentSize) {
             cwnd = cwnd + rs.m_ackedSacked;
         }
+
+        //Not mentioned in paper but implemented in its eval
+        // if (m_oBBR && m_cwndGain < m_maxCwndGain)
+        //     cwnd = std::min(cwnd, Bdp(tcb, Bw(), gain));
+
         cwnd = std::max(cwnd, tcb->m_segmentSize * CWND_MIN_TARGET_PKTS);
     }();
 
@@ -494,6 +632,7 @@ void TcpBbr::SetCwnd(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
     }
 }
 
+// When enter CA_LOSS or CA_RECOVERY, we use the following logic to set cwnd:
 bool TcpBbr::SetCwndToRecoverOrRestore(Ptr<TcpSocketState> tcb, const TcpRateSample& rs, uint32_t& newCwnd)
 {
     const auto& rc = tcb->m_rateOps->m_rate;
@@ -515,11 +654,14 @@ bool TcpBbr::SetCwndToRecoverOrRestore(Ptr<TcpSocketState> tcb, const TcpRateSam
     //     cwnd = std::max((int)cwnd - (int)rs.m_bytesLoss, (int)tcb->m_segmentSize);
     // }
 
+    //first enter CA_RECOVERY
     if (currCongState == TcpSocketState::CA_RECOVERY && m_prevCaState != TcpSocketState::CA_RECOVERY) {
         m_packetConservation = true;
         m_nextRttDelivered = rc.m_delivered;
         cwnd = tcb->m_bytesInFlight.Get() + rs.m_ackedSacked;
-    } else if (m_prevCaState >= TcpSocketState::CA_RECOVERY && currCongState < TcpSocketState::CA_RECOVERY) {
+    }
+    // exit CA_RECOVERY or CA_LOSS
+    else if (m_prevCaState >= TcpSocketState::CA_RECOVERY && currCongState < TcpSocketState::CA_RECOVERY) {
         cwnd = std::max(cwnd, m_priorCwnd);
         m_packetConservation = false;
     }
@@ -689,6 +831,10 @@ void TcpBbr::CongestionStateSet(Ptr<TcpSocketState> tcb, const TcpSocketState::T
         rs.m_bytesLoss = tcb->m_segmentSize;
         LtBwSampling(tcb, rs);
     }
+
+     //update last loss time, used for oBBR
+    if (newState == TcpSocketState::CA_LOSS || newState == TcpSocketState::CA_RECOVERY)
+        m_lastLossTime = Simulator::Now();
 }
 
 void TcpBbr::CwndEvent(Ptr<TcpSocketState> tcb, const TcpSocketState::TcpCAEvent_t event) {
@@ -718,5 +864,7 @@ TcpBbr::Fork()
 {
     return CopyObject<TcpBbr>(this);
 }
+
+
 
 } // namespace ns3

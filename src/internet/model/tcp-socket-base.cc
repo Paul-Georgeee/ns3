@@ -1889,6 +1889,7 @@ TcpSocketBase::ReceivedAck(Ptr<Packet> packet, const TcpHeader& tcpHeader)
                                                     priorInFlight,
                                                     m_tcb->m_minRtt);
         const auto& rateConn = m_tcb->m_rateOps->GetConnectionRate();
+
         m_congestionControl->CongControl(m_tcb, rateConn, rateSample);
     }
 }

@@ -177,14 +177,14 @@ class TcpBbr : public TcpCongestionOps
     Time m_probeRttDuration{MilliSeconds(200)};
 
     /* Variables */
-    BbrMode_t m_mode{BbrMode_t::BBR_STARTUP}; //!< Current bbr mode in state machine
+    TracedValue<BbrMode_t> m_mode{BbrMode_t::BBR_STARTUP}; //!< Current bbr mode in state machine
     DataRate m_fullBw{0};      //!< Value of full bandwidth recorded
     uint32_t m_fullBwCnt{0};   //!< Number of rounds without large bw gains
-    uint32_t m_cycleIdx{0};    //!< Current index in pacing_gain cycle array
-    double m_pacingGain{0};    //!< Current gain for setting pacing rate
+    TracedValue<uint32_t> m_cycleIdx{0};    //!< Current index in pacing_gain cycle array
+    TracedValue<double> m_pacingGain{0};    //!< Current gain for setting pacing rate
     double m_cwndGain{0};      //!< Current gain for setting cwnd
 
-    Time m_minRtt{Time::Max()};               //!< Min RTT in m_minRttWin window
+    TracedValue<Time> m_minRtt{Time::Max()};               //!< Min RTT in m_minRttWin window
     Time m_minRttTimestamp{Seconds(0)};       //!< Timestamp of m_minRtt
     Time m_probeRttDoneTimestamp{Seconds(0)}; //!< End time for BBR_PROBE_RTT mode
     MaxBandwidthFilter_t m_bwFilter;          //!< Max recent delivery rate
@@ -214,6 +214,7 @@ class TcpBbr : public TcpCongestionOps
      * This seems to be a feature only implemented in Linux.
      * Disabled by default (m_enableLongTermBwMeasure is set to false in TcpBbr::GetTypeId).
      */
+
     bool m_ltIsSampling{false};
     bool m_ltUseBw{false};
     uint32_t m_ltRttCnt{0};
@@ -221,7 +222,48 @@ class TcpBbr : public TcpCongestionOps
     uint64_t m_ltLastDelivered{0};
     Time m_ltLastTimestamp{0};
     uint64_t m_ltLastLost{0};
+
+  //oBBR
+  private:
+    bool m_oBBR{false};                               // Use oBBR or not
+    double m_u{0.5};                                  // The param u in the original oBBR paper
+    Time m_lastLossTime{0};                           // Time of last loss event
+    Time m_lossTimeWinSize{MilliSeconds(3000)};       // When current time - m_lastLossTime > m_lossTimeWinSize, we recover the cwnd gain in Probe BW. Not mentioned in the original oBBR paper.
+
+    uint32_t m_upRttCnt{0};                           // Count of abnormal RTT samples
+    uint32_t m_downBwCnt{0};                          // Count of abnormal BW samples
+
+    bool m_changeSC{false};                           // A flag used in compute Score in Section 4.2. Refer to the orignal implementation of oBBR in github;
+    int32_t m_cc;                                     // Refer to the orignal implementation of oBBR in github;
+    Time m_scoreTime{Time::Max()};                    // The time when starting to score.
+    DataRate m_recentBw[100];                         // Recent BW samples
+    int32_t m_recentBwIndex{0};                       // Index of the recent BW samples array
+    int32_t m_kSamples{30};                           // Use the last m_kSamples samples to compute the new bw
+
+    uint64_t m_firstSent{0};                          // Used for computing the score. 
+    uint64_t m_firstDelivered{0};                     // Used for computing the score.
+    Time m_scoreInterval{MilliSeconds(200)};          // The interval for computing the score.
+
+    uint64_t m_score1, m_score2, m_score3, m_score4;  // Used for compare the score between before changing the bw and after changing the bw.
+    DataRate m_backupBw;                              // Bandwidth backup
+    Time m_reTimer{Seconds(0)};     
+
+    double m_maxCwndGain{2.0};                  
+
+
+    void oBBRUpdate(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, const TcpRateSample& rs);
 };
+
+namespace TracedValueCallback{
+  typedef void (*BbrMode) (const TcpBbr::BbrMode_t oldValue,
+                             const TcpBbr::BbrMode_t newValue); 
+
+  typedef void (*PacingGain) (const double oldValue, const double newValue);
+
+  typedef void (*CycleIdx) (const uint32_t oldValue, const uint32_t newValue);
+
+  typedef void (*MinRtt) (const Time oldValue, const Time newValue);
+}
 
 } // namespace ns3
 #endif // TCPBBR_H

@@ -235,6 +235,9 @@ TcpRateLinux::SkbSent(TcpTxItem* skb, bool isStartOfTransmission)
     skbInfo.m_deliveredTime = m_rate.m_deliveredTime;
     skbInfo.m_isAppLimited = (m_rate.m_appLimited != 0);
     skbInfo.m_delivered = m_rate.m_delivered;
+
+    //update total send bytes, used for oBBR
+    m_rate.m_send += skb->GetSeqSize();
 }
 
 } // namespace ns3
