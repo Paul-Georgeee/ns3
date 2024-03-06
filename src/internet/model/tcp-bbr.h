@@ -248,10 +248,12 @@ class TcpBbr : public TcpCongestionOps
     DataRate m_backupBw;                              // Bandwidth backup
     Time m_reTimer{Seconds(0)};     
 
-    double m_maxCwndGain{2.0};                  
+    double m_maxCwndGain{2.0};
+                  
 
 
     void oBBRUpdate(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, const TcpRateSample& rs);
+    void oBBRCwndAdjust(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, const TcpRateSample& rs);
 };
 
 namespace TracedValueCallback{

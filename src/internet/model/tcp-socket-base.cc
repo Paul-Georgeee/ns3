@@ -19,7 +19,7 @@
  */
 
 // TODO: currently we assume that sack is enabled
-constexpr bool EnableTSQ = true;
+constexpr bool EnableTSQ = false;
 constexpr bool LinuxRtoMin = false;
 
 #define NS_LOG_APPEND_CONTEXT                                                                      \

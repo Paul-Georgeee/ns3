@@ -3,6 +3,7 @@
 
 using namespace ns3;
 extern std::string dir;
+extern uint64_t totalDeliveredBytes, totalLossBytes;
 // Check the queue size
 void CheckQueueSize (Ptr<QueueDisc> qd)
 {
@@ -20,9 +21,13 @@ void TraceThroughputFromTcp(uint32_t nodeId, uint32_t socketId)
   auto container = Config::LookupMatches("/NodeList/" + std::to_string (nodeId) + "/$ns3::TcpL4Protocol/SocketList/" + std::to_string (socketId));
   Ptr<TcpSocketBase> socket = dynamic_cast<TcpSocketBase*>(PeekPointer(container.Get(0)));
   uint64_t curTotalDelievered = socket->GetTotalDeliveredBytes();
-  std::cout << Simulator::Now().GetSeconds() << " Delivered Rate: " << (curTotalDelievered - lastTotalDelievered) * 8 / 1000000.0 / 0.1 << "; Retransmit: " << socket->GetTotalRetransBytes() << std::endl;
+  std::ofstream q (dir + "/throughput.dat", std::ios::out | std::ios::app);
+  q << Simulator::Now().GetSeconds() << " Delivered Rate: " << (curTotalDelievered - lastTotalDelievered) * 8 / 1000000.0 / 0.1 << "; Total Delivered: " << curTotalDelievered << " Total Retransmit: " << socket->GetTotalRetransBytes() << std::endl;
   lastTotalDelievered = curTotalDelievered;
   Simulator::Schedule (Seconds (0.1), &TraceThroughputFromTcp, nodeId, socketId);
+  totalDeliveredBytes = curTotalDelievered;
+  totalLossBytes = socket->GetTotalRetransBytes();
+  q.close();
 }
 
 

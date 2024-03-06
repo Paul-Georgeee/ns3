@@ -115,6 +115,11 @@ TcpBbr::GetTypeId()
                             BooleanValue(false),
                             MakeBooleanAccessor(&TcpBbr::m_oBBR),
                             MakeBooleanChecker())
+            .AddAttribute("OBbrU",
+                            "The mu arg in oBBR",
+                            DoubleValue(0.5),
+                            MakeDoubleAccessor(&TcpBbr::m_u),
+                            MakeDoubleChecker<double>())
             .AddTraceSource("BbrState",
                             "The current BBR state",
                             MakeTraceSourceAccessor(&TcpBbr::m_mode),
@@ -476,25 +481,43 @@ void TcpBbr::CongControl(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, c
     if(m_oBBR)
         oBBRUpdate(tcb, rc, rs);
     UpdateModel(tcb, rs);
+    if(m_oBBR)
+        oBBRCwndAdjust(tcb, rc, rs);
     SetPacingRate(tcb, m_pacingGain);
     SetCwnd(tcb, rs);
 }
 
-void TcpBbr::oBBRUpdate(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, const TcpRateSample& rs)
+void TcpBbr::oBBRCwndAdjust(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, const TcpRateSample& rs)
 {
     if(m_mode == BBR_STARTUP && tcb->m_totalLost * 100.0 / rc.m_delivered < 10.0)
         return;
 
     // packet loss happen and min rtt is valid
-    if(rs.m_bytesLoss && m_minRtt != Time::Max())
+    if(rs.m_bytesLoss && rs.m_rtt >= m_minRtt)
     {   
         double curRtt = rs.m_rtt.GetDouble(), minRtt = m_minRtt.Get().GetDouble();
+        // double prevCwnd = m_cwndGain;
         this->m_cwndGain = std::min(1.0 + m_u * (curRtt - minRtt) / minRtt, m_maxCwndGain);
+        // std::cout << "cwnd gain: " << prevCwnd << " -> " << m_cwndGain << std::endl;
     } 
     // not in loss, recover the cwndgain
     else if(tcb->m_congState.Get() < TcpSocketState::CA_RECOVERY)
         this->m_cwndGain = std::min(this->m_cwndGain + (0.01 * rs.m_ackedSacked) / Inflight(tcb, m_bwFilter.GetBest(), 1.0), m_maxCwndGain);
     
+}
+
+void TcpBbr::oBBRUpdate(Ptr<TcpSocketState> tcb, const TcpRateConnection& rc, const TcpRateSample& rs)
+{
+    static bool flag = true;
+    if(flag)
+    {
+        std::cout << "Use oBBR mode" << std::endl;
+        flag = false;
+    }
+    // std::cout << "flag" << std::endl;
+    if(m_mode == BBR_STARTUP && tcb->m_totalLost * 100.0 / rc.m_delivered < 10.0)
+        return;
+
 
     // Update the abnormal rtt sample cnt
     if(rs.m_rtt > 2.5 * m_minRtt)
@@ -603,11 +626,11 @@ void TcpBbr::SetCwnd(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
 
         //oBBR: ensure enough cwnd when probe bw. Not mentioned in paper but implemented in its eval
         double gain = this->m_cwndGain;
-        // if(this->m_oBBR && this->m_pacingGain > 1.0){
-        //     gain = std::max(gain, 1.25);
-        //     if(Simulator::Now() - m_lastLossTime > m_lossTimeWinSize)
-        //         gain = std::max(gain, m_maxCwndGain);
-        // }
+        if(this->m_oBBR && this->m_pacingGain > 1.0){
+            gain = std::max(gain, 1.25);
+            if(Simulator::Now() - m_lastLossTime > m_lossTimeWinSize)
+                gain = std::max(gain, m_maxCwndGain);
+        }
 
         uint32_t targetCwnd = Bdp(tcb, Bw(), gain);
         targetCwnd += AckAggregationCwnd(tcb);
@@ -619,9 +642,9 @@ void TcpBbr::SetCwnd(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
             cwnd = cwnd + rs.m_ackedSacked;
         }
 
-        //Not mentioned in paper but implemented in its eval
-        // if (m_oBBR && m_cwndGain < m_maxCwndGain)
-        //     cwnd = std::min(cwnd, Bdp(tcb, Bw(), gain));
+        // Not mentioned in paper but implemented in its eval
+        if (m_oBBR && m_cwndGain < m_maxCwndGain)
+            cwnd = std::min(cwnd, Bdp(tcb, Bw(), gain));
 
         cwnd = std::max(cwnd, tcb->m_segmentSize * CWND_MIN_TARGET_PKTS);
     }();
