@@ -4,6 +4,7 @@
 using namespace ns3;
 extern std::string dir;
 extern uint64_t totalDeliveredBytes, totalLossBytes;
+extern std::string tcpTypeId;
 // Check the queue size
 void CheckQueueSize (Ptr<QueueDisc> qd)
 {
@@ -56,6 +57,8 @@ static void BbrmodeTracer(Ptr<OutputStreamWrapper> stream, TcpBbr::BbrMode_t old
 
 void TraceBbrMode (uint32_t nodeId, uint32_t socketId)
 {
+  if(tcpTypeId != "TcpBbr")
+    return;
   AsciiTraceHelper ascii;
   Ptr<OutputStreamWrapper> stream = ascii.CreateFileStream (dir + "/bbrMode.txt");
   Config::ConnectWithoutContext ("/NodeList/" + std::to_string (nodeId) + "/$ns3::TcpL4Protocol/SocketList/" + std::to_string (socketId) + "/CongestionOps/BbrState", MakeBoundCallback (&BbrmodeTracer, stream));
@@ -88,6 +91,8 @@ static void PacingGainTracer (Ptr<OutputStreamWrapper> stream, uint32_t oldval, 
 
 void TracePacingGain (uint32_t nodeId, uint32_t socketId)
 {
+    if(tcpTypeId != "TcpBbr")
+        return;
     AsciiTraceHelper ascii;
     Ptr<OutputStreamWrapper> stream = ascii.CreateFileStream (dir + "/pacingGain.dat");
     Config::ConnectWithoutContext ("/NodeList/" + std::to_string (nodeId) + "/$ns3::TcpL4Protocol/SocketList/" + std::to_string (socketId) + "/CongestionOps/CycleIdx", MakeBoundCallback (&PacingGainTracer, stream));
@@ -103,6 +108,8 @@ static void MinRttTracer (Ptr<OutputStreamWrapper> stream, Time oldval, Time new
 
 void TraceMinRtt (uint32_t nodeId, uint32_t socketId)
 {
+    if(tcpTypeId != "TcpBbr")
+        return;
     AsciiTraceHelper ascii;
     Ptr<OutputStreamWrapper> stream = ascii.CreateFileStream (dir + "/minRtt.dat");
     Config::ConnectWithoutContext ("/NodeList/" + std::to_string (nodeId) + "/$ns3::TcpL4Protocol/SocketList/" + std::to_string (socketId) + "/CongestionOps/MinRtt", MakeBoundCallback (&MinRttTracer, stream));

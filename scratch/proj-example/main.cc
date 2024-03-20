@@ -13,7 +13,7 @@ using namespace ns3;
 NS_LOG_COMPONENT_DEFINE("ScratchSimulator");
 
 
-std::string dir;
+std::string dir = "";
 std::string tcpTypeId = "TcpBbr";
 std::string queueDisc = "FifoQueueDisc";
 double bufferSize = 0.25;  // Defaultly set buffer size to 0.25 * BDP
@@ -55,6 +55,7 @@ void parseArg(int argc, char *argv[])
   cmd.AddValue ("delay", "Delay of the link", delay);
   cmd.AddValue ("OBBRU", "OBBR argue mu", OBBRU);
   cmd.AddValue ("lossRate", "Loss rate of the link", lossRate); 
+  cmd.AddValue ("dir", "Output directory", dir);
   cmd.Parse (argc, argv);
 }
 
@@ -167,24 +168,27 @@ int main (int argc, char *argv [])
   sinkApps.Start (Seconds (0.0));
   sinkApps.Stop (stopTime);
 
-  // Create a new directory to store the output of the program
-  dir = "/home/ybxiao/cc/ns-3-dev/results";
-  std::string bufstr = doubleToStringWithPrecision(bufferSize, 2) + "-buffer/";
-  std::string lossRateStr = doubleToStringWithPrecision(lossRate, 3) + "-loss/";
-  if(tcpTypeId == "TcpBbr")
+  // If dir is not pass through argument
+  if(dir == "")
   {
-    if(useOBbr)
-      dir += "/obbr-results/" + bufstr + lossRateStr + doubleToStringWithPrecision(OBBRU, 2) + "-OBBRU/" + currentTime + "/";
+    // Create a new directory to store the output of the program
+    dir = "/home/ybxiao/cc/ns-3-dev/results";
+    std::string bufstr = doubleToStringWithPrecision(bufferSize, 2) + "-buffer/";
+    std::string lossRateStr = doubleToStringWithPrecision(lossRate, 3) + "-loss/";
+    if(tcpTypeId == "TcpBbr")
+    {
+      if(useOBbr)
+        dir += "/obbr/" + bufstr + lossRateStr + doubleToStringWithPrecision(OBBRU, 2) + "-OBBRU/" + currentTime + "/";
+      else
+        dir += "/bbr/" + bufstr + lossRateStr + currentTime + "/";
+    }
     else
-      dir += "/bbr-results/" + bufstr + lossRateStr + currentTime + "/";
+      dir = "/home/ybxiao/cc/ns-3-dev/results/" + tcpTypeId + "/" + bufstr + lossRateStr + currentTime + "/";
   }
-  else
-    dir = "/home/ybxiao/cc/ns-3-dev/ + " + tcpTypeId + "-results/" + bufstr + lossRateStr + currentTime + "/";
+  
   std::string dirToSave = "mkdir -p " + dir;
   if (system (dirToSave.c_str ()) == -1)
-    {
-      exit (1);
-    }
+    exit (1);
 
   if(lossRate > 0)
   {
@@ -203,6 +207,9 @@ int main (int argc, char *argv [])
   Config::SetDefault (queueDisc + "::MaxSize", QueueSizeValue (QueueSize (QueueSizeUnit::BYTES, (uint32_t)(DataRate(dataRate) * Time(delay) * bufferSize / 8))));
   QueueDiscContainer qd;
   qd = tch.Install (link.Get(0));
+  std::fstream fin(dir + "info.txt", std::ios::out | std::ios::app);
+  fin << "Queue size: " << qd.Get(0)->GetMaxSize() << std::endl;
+  
   Simulator::ScheduleNow (&CheckQueueSize, qd.Get (0));
   
   logInfo();
@@ -215,5 +222,8 @@ int main (int argc, char *argv [])
   f << "Total Delivered: " << totalDeliveredBytes << std::endl;
   f << "Total Loss: " << totalLossBytes << std::endl;
   f.close();
+
+  std::cout << "Simulation finished." << std::endl;
+
   return 0;
 }
