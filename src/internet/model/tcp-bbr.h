@@ -181,8 +181,8 @@ class TcpBbr : public TcpCongestionOps
     DataRate m_fullBw{0};      //!< Value of full bandwidth recorded
     uint32_t m_fullBwCnt{0};   //!< Number of rounds without large bw gains
     TracedValue<uint32_t> m_cycleIdx{0};    //!< Current index in pacing_gain cycle array
-    TracedValue<double> m_pacingGain{0};    //!< Current gain for setting pacing rate
-    double m_cwndGain{0};      //!< Current gain for setting cwnd
+    TracedValue<double> m_pacingGain{2.88539};    //!< Current gain for setting pacing rate
+    double m_cwndGain{2.88539};      //!< Current gain for setting cwnd
 
     TracedValue<Time> m_minRtt{Time::Max()};               //!< Min RTT in m_minRttWin window
     Time m_minRttTimestamp{Seconds(0)};       //!< Timestamp of m_minRtt

@@ -205,7 +205,7 @@ void TcpBbr::UpdateModel(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
     CheckFullBwReached(tcb, rs);
     CheckDrain(tcb, rs);
     UpdateMinRtt(tcb, rs);
-    UpdateGains();
+    // UpdateGains();
 }
 
 void TcpBbr::UpdateBw(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
@@ -344,6 +344,7 @@ uint32_t TcpBbr::Inflight(Ptr<TcpSocketState> tcb, DataRate bw, double gain) {
 void TcpBbr::AdvanceCyclePhase() {
     m_cycleIdx = (m_cycleIdx.Get() + 1) % GAIN_CYCLE_LENGTH;
     m_cycleTimestamp = Simulator::Now(); // rc.m_deliveredTime
+    this->m_pacingGain = PACING_GAIN[m_cycleIdx.Get()];
 }
 
 void TcpBbr::CheckFullBwReached(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
@@ -365,6 +366,10 @@ void TcpBbr::CheckFullBwReached(Ptr<TcpSocketState> tcb, const TcpRateSample& rs
 void TcpBbr::CheckDrain(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
     if (m_mode == BBR_STARTUP && m_isFullBwReached) {
         m_mode = BBR_DRAIN;
+
+        m_pacingGain = DRAIN_GAIN;
+        m_cwndGain = DRAIN_GAIN;
+        
         tcb->m_ssThresh = Inflight(tcb, m_bwFilter.GetBest(), 1.0);
     }
     if (m_mode == BBR_DRAIN) {
@@ -377,6 +382,7 @@ void TcpBbr::CheckDrain(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
 
 void TcpBbr::ResetProbeBwMode() {
     m_mode = BBR_PROBE_BW;
+    m_cwndGain = CWND_GAIN;
     m_cycleIdx = GAIN_CYCLE_LENGTH - 1 - (int)m_uv->GetValue(0, 7);
     AdvanceCyclePhase();
 }
@@ -397,6 +403,10 @@ void TcpBbr::UpdateMinRtt(Ptr<TcpSocketState> tcb, const TcpRateSample& rs) {
         !m_isIdleRestart && m_mode != BBR_PROBE_RTT)
     {
         m_mode = BBR_PROBE_RTT;
+
+        m_pacingGain = 1.0;
+        m_cwndGain = 1.0;
+
         SaveCwnd(tcb);
         m_probeRttDoneTimestamp = Time{0};
     }
@@ -449,6 +459,8 @@ void TcpBbr::CheckProbeRttDone(Ptr<TcpSocketState> tcb) {
 void TcpBbr::ResetMode() {
     if (!m_isFullBwReached) {
         m_mode = BBR_STARTUP;
+        m_pacingGain = HIGH_GAIN;
+        m_cwndGain = HIGH_GAIN;
     } else {
         ResetProbeBwMode();
     }

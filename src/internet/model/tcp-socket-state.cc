@@ -37,7 +37,7 @@ TcpSocketState::GetTypeId()
                           MakeBooleanChecker())
             .AddAttribute("MaxPacingRate",
                           "Set Max Pacing Rate",
-                          DataRateValue(DataRate("4Gb/s")),
+                          DataRateValue(DataRate("40Gb/s")),
                           MakeDataRateAccessor(&TcpSocketState::m_maxPacingRate),
                           MakeDataRateChecker())
             .AddAttribute("PacingSsRatio",

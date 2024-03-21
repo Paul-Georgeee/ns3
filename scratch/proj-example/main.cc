@@ -35,12 +35,12 @@ std::string doubleToStringWithPrecision(double value, int precision) {
 void GetTrace()
 {
   // Hook trace source after application starts
-  Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceCwnd, 0, 0);
+  // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceCwnd, 0, 0);
   Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceThroughputFromTcp, 0, 0);
-  Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TracePacingRate, 0, 0);
-  Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceBbrMode, 0, 0);
-  Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TracePacingGain, 0, 0);
-  Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceMinRtt, 0, 0);
+  // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TracePacingRate, 0, 0);
+  // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceBbrMode, 0, 0);
+  // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TracePacingGain, 0, 0);
+  // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceMinRtt, 0, 0);
 }
 
 void parseArg(int argc, char *argv[])
@@ -64,13 +64,13 @@ void setDefaultAttri()
   queueDisc = std::string ("ns3::") + queueDisc;
   Config::SetDefault ("ns3::TcpL4Protocol::SocketType", StringValue ("ns3::" + tcpTypeId));
   Config::SetDefault ("ns3::TcpBbr::EnableOBBR", BooleanValue (useOBbr));
-  Config::SetDefault ("ns3::TcpSocket::SndBufSize", UintegerValue (67108864));
-  Config::SetDefault ("ns3::TcpSocket::RcvBufSize", UintegerValue (67108864));
+  Config::SetDefault ("ns3::TcpSocket::SndBufSize", UintegerValue (1073741820));
+  Config::SetDefault ("ns3::TcpSocket::RcvBufSize", UintegerValue (1073741820));
   Config::SetDefault ("ns3::TcpSocket::InitialCwnd", UintegerValue (10));
   Config::SetDefault ("ns3::TcpSocket::DelAckCount", UintegerValue (delAckCount));
   Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (1448));
+  Config::SetDefault (queueDisc + "::MaxSize", QueueSizeValue (QueueSize (QueueSizeUnit::BYTES, (uint32_t)(DataRate(dataRate) * Time(delay) * 10 / 8)))); // 10 * BDP
   Config::SetDefault ("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue (QueueSize ("1p")));
-  Config::SetDefault (queueDisc + "::MaxSize", QueueSizeValue (QueueSize ("10MB")));
   Config::SetDefault ("ns3::TcpBbr::OBbrU", DoubleValue (OBBRU));
   Config::SetDefault ("ns3::RateErrorModel::ErrorRate", DoubleValue (lossRate));
   Config::SetDefault ("ns3::RateErrorModel::ErrorUnit", StringValue ("ERROR_UNIT_PACKET"));
@@ -121,7 +121,6 @@ int main (int argc, char *argv [])
 
   NetDeviceContainer link = p2pHelper.Install (sender.Get (0), receiver.Get (0));
 
-  
   // Install Stack
   InternetStackHelper internet;
   internet.Install (sender);
