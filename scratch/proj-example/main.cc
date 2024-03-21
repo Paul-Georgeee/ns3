@@ -40,7 +40,7 @@ void GetTrace()
   // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TracePacingRate, 0, 0);
   // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceBbrMode, 0, 0);
   // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TracePacingGain, 0, 0);
-  // Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceMinRtt, 0, 0);
+  Simulator::Schedule (Seconds (0.1) + MilliSeconds (1), &TraceMinRtt, 0, 0);
 }
 
 void parseArg(int argc, char *argv[])
@@ -69,7 +69,7 @@ void setDefaultAttri()
   Config::SetDefault ("ns3::TcpSocket::InitialCwnd", UintegerValue (10));
   Config::SetDefault ("ns3::TcpSocket::DelAckCount", UintegerValue (delAckCount));
   Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (1448));
-  Config::SetDefault (queueDisc + "::MaxSize", QueueSizeValue (QueueSize (QueueSizeUnit::BYTES, (uint32_t)(DataRate(dataRate) * Time(delay) * 10 / 8)))); // 10 * BDP
+  Config::SetDefault (queueDisc + "::MaxSize", QueueSizeValue (QueueSize (QueueSizeUnit::BYTES, (uint32_t)(DataRate(dataRate) * Time(delay) * 2 * 10 / 8)))); // 10 * BDP
   Config::SetDefault ("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue (QueueSize ("1p")));
   Config::SetDefault ("ns3::TcpBbr::OBbrU", DoubleValue (OBBRU));
   Config::SetDefault ("ns3::RateErrorModel::ErrorRate", DoubleValue (lossRate));
@@ -203,7 +203,7 @@ int main (int argc, char *argv [])
   tch.Uninstall (link.Get(0));
   //Set shadow buffer and trace the queue size
   
-  Config::SetDefault (queueDisc + "::MaxSize", QueueSizeValue (QueueSize (QueueSizeUnit::BYTES, (uint32_t)(DataRate(dataRate) * Time(delay) * bufferSize / 8))));
+  Config::SetDefault (queueDisc + "::MaxSize", QueueSizeValue (QueueSize (QueueSizeUnit::BYTES, (uint32_t)(DataRate(dataRate) * Time(delay) * 2 * bufferSize / 8))));
   QueueDiscContainer qd;
   qd = tch.Install (link.Get(0));
   std::fstream fin(dir + "info.txt", std::ios::out | std::ios::app);
